@@ -25,7 +25,10 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { platform } from 'os';
-import { LoginDTO, RegisterDTO } from '../dto/auth.dto';
+import { LoginDTO, RegisterDTO, UpdatePasswordDTO } from '../dto/auth.dto';
+import { REQUEST_ERROR, SUCCESS } from 'src/shared/constants/httpCodes';
+import { notFound, requestInvalid, success } from 'src/helpers/http';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 
 @ApiTags('🌏 🔒 Auth API')
 @Controller('auth')
