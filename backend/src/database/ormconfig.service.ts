@@ -1,32 +1,42 @@
-import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
-import { join } from 'path';
+import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import * as dotenv from 'dotenv';
-import { Entity } from 'typeorm';
-import { DynamicModule } from '@nestjs/common';
+import { join } from 'path';
 
 dotenv.config();
 
 class ConfigService {
-  constructor(private env: { [k: string]: string | undefined }) {}
+    constructor(private env: { [k: string]: string | undefined }) { }
 
-  public getTypeOrmConfig(): TypeOrmModuleOptions {
-    return {
-      type: 'mysql',
-      host: this.env.DB_HOST,
-      port: Number(this.env.DB_PORT),
-      username: this.env.DB_USERNAME,
-      password: this.env.DB_PASSWORD,
-      database: this.env.DB_NAME,
-      logging: false,
+    private getEnvVar(key: string, required = true): string {
+        const value = this.env[key];
+        if (required && (!value || value.trim() === '')) {
+            throw new Error(`Environment variable ${key} is not set or empty`);
+        }
+        return value || '';
+    }
 
-      entities: [__dirname + '/../**/*.entity{.ts,.js}'],
+    public getTypeOrmConfig(): TypeOrmModuleOptions {
+        return {
+            type: 'postgres',
+            host: this.getEnvVar('DB_HOST'),
+            port: Number(this.getEnvVar('DB_PORT')),
+            username: this.getEnvVar('DB_USERNAME'),
+            password: this.getEnvVar('DB_PASSWORD'), // guaranteed to be string
+            database: this.getEnvVar('DB_NAME'),
 
-      migrationsTableName: 'migration',
-      migrations: [join(__dirname, '..', 'migrations', '*.ts')],
+            logging: this.env.NODE_ENV === 'development' ? 'all' : false,
 
-      synchronize: true,
-    };
-  }
+            entities: [
+                __dirname + '/../**/*.entity{.ts,.js}',
+            ],
+
+            migrationsTableName: 'migration',
+            migrations: [join(__dirname, '..', 'migrations', '*.ts')],
+            migrationsRun: false,
+
+            synchronize: true,
+        };
+    }
 }
 
 const configService = new ConfigService(process.env);
