@@ -42,6 +42,10 @@ lerna-debug.log*
 .env.production.local
 .env.local
 
+# Compiled package-lock.json
+package-lock.json
+yarn.lock
+
 # temp directory
 .temp
 .tmp
