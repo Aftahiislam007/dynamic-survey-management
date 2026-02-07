@@ -14,6 +14,7 @@ import { UsersModule } from './modules/users/users.module';
 import { SurveysModule } from './modules/surveys/surveys.module';
 import { FieldsModule } from './modules/fields/fields.module';
 import { SubmissionsModule } from './modules/submissions/submissions.module';
+import { LoggerMiddleware } from './common/middleware/logger.middleware';
 
 
 const logsFolderPath = 'logs';
