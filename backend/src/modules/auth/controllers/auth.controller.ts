@@ -80,7 +80,7 @@ export class AuthController {
     @Body() loginDTO: LoginDTO,
   ) {
     try {
-      const data: any = await this.authService.officerLogin(request, loginDTO, 'web');
+      const data: any = await this.authService.login(request, loginDTO, 'web');
 
       return response.status(HttpStatus.OK).json({
         statusCode: HttpStatus.OK,
@@ -435,34 +435,34 @@ export class AuthController {
     }
   }
 
-  @Post('verify-otp')
-  @ApiOperation({
-    summary: 'Verify OTP',
-    description: 'Verifies the OTP sent to user email',
-  })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        email: { type: 'string', example: 'user@example.com' },
-        otp: { type: 'number', example: 123456 },
-      },
-    },
-  })
-  @ApiResponse({ status: 200, description: 'OTP verified successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid OTP or bad request' })
-  async verifyOtp(
-    @Req() request: Request,
-    @Res() response: Response,
-    @Body('email') email: string,
-    @Body('otp') otp: number,
-  ) {
-    try {
-      const data: any = await this.authService.verifyOtp(email, otp);
+  // @Post('verify-otp')
+  // @ApiOperation({
+  //   summary: 'Verify OTP',
+  //   description: 'Verifies the OTP sent to user email',
+  // })
+  // @ApiBody({
+  //   schema: {
+  //     type: 'object',
+  //     properties: {
+  //       email: { type: 'string', example: 'user@example.com' },
+  //       otp: { type: 'number', example: 123456 },
+  //     },
+  //   },
+  // })
+  // @ApiResponse({ status: 200, description: 'OTP verified successfully' })
+  // @ApiResponse({ status: 400, description: 'Invalid OTP or bad request' })
+  // async verifyOtp(
+  //   @Req() request: Request,
+  //   @Res() response: Response,
+  //   @Body('email') email: string,
+  //   @Body('otp') otp: number,
+  // ) {
+  //   try {
+  //     const data: any = await this.authService.verifyOtp(email, otp);
 
-      return response.status(SUCCESS).json(success(data));
-    } catch (error) {
-      return response.status(REQUEST_ERROR).json(requestInvalid(error));
-    }
-  }
+  //     return response.status(SUCCESS).json(success(data));
+  //   } catch (error) {
+  //     return response.status(REQUEST_ERROR).json(requestInvalid(error));
+  //   }
+  // }
 }

@@ -24,7 +24,7 @@ export class JwtService {
   // Get User by User ID we get from decode()
   public async validateUser(decoded: any) {
     const user = await this.userRepository.findOne({
-      where: { intId: decoded.id },
+      where: { id: decoded.id },
     });
 
     if (!user) {
@@ -32,22 +32,21 @@ export class JwtService {
       return null; // Explicitly return null
     }
     return {
-      id: user.intId,
-      name: user.strFirstName + ' ' + user.strLastName,
-      email: user.strEmail,
-      phoneNumber: user.strPhoneNumber,
-      userType: user.strUserType,
+      id: user.id,
+      name: user.firstName + ' ' + user.lastName,
+      email: user.email,
+      phoneNumber: user.phoneNumber,
+      userType: user.userType,
       isSuperAdmin: user.isSuperAdmin,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
       isEmailVerified: user.isEmailVerified,
-      avatarUrl: user.avatarUrl,
     };
   }
 
   // Generate JWT Token
   public generateToken(auth: User): string {
-    return this.jwt.sign({ id: auth.intId, email: auth.strEmail });
+    return this.jwt.sign({ id: auth.id, email: auth.email });
   }
 
   // Validate User's password

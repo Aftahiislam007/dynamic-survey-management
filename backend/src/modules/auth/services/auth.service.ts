@@ -18,6 +18,13 @@ import { otpEmailBody } from 'src/utils/emailBody/otpEmailBody';
 // import { sendMail } from "src/utils/sendEmail";
 import { isEmail } from 'class-validator';
 import { sendMail } from 'src/utils/sendEmail';
+import { User } from 'src/modules/users/entities/user.entity';
+import { UserPasswordSecurityManager } from 'src/modules/users/entities/user-password-security-manager.entity';
+import { UsersService } from 'src/modules/users/services/users.service';
+import { LoginDTO, RegisterDTO, UpdatePasswordDTO } from '../dto/auth.dto';
+import { UserTypes } from 'src/modules/users/data/user-type.enum';
+import { CreateUserDto } from 'src/modules/users/dto/create-user.dto';
+import type { StringValue } from 'ms';
 
 @Injectable()
 export class AuthService {
@@ -28,7 +35,7 @@ export class AuthService {
     private userRepository: Repository<User>,
     @InjectRepository(UserPasswordSecurityManager)
     private userPasswordSecurityManagerRepository: Repository<UserPasswordSecurityManager>,
-    private userService: UserService,
+    private userService: UsersService,
     private readonly jwtService: JwtService,
     @InjectEntityManager()
     private entityManager: EntityManager,
@@ -38,20 +45,20 @@ export class AuthService {
   private async generateRefreshToken(existingUser: any) {
     try {
       const payload = {
-        id: existingUser.intId,
-        email: existingUser.strEmail,
-        userType: existingUser.strUserType,
+        id: existingUser.id,
+        email: existingUser.email,
+        userType: existingUser.userType,
         tokenType: 'refresh',
       };
 
       const refreshToken = await this.jwtService.signAsync(payload, {
         secret: process.env.JWT_REFRESH_SECRET,
-        expiresIn: process.env.JWT_REFRESH_EXPIRATION || '30d',
+        expiresIn: process.env.JWT_REFRESH_EXPIRATION as StringValue || '30d' as StringValue,
       });
 
       // Modified: update login info using userId instead of intId directly
       await this.loginInfoRepository.update(
-        { userId: existingUser.intId },
+        { user_Id: existingUser.id },
         { refresh_token: refreshToken },
       );
 
@@ -73,15 +80,15 @@ export class AuthService {
   private async generateAccessToken(existingUser: any) {
     try {
       const payload = {
-        id: existingUser.intId,
-        email: existingUser.strEmail,
-        userType: existingUser.strUserType,
+        id: existingUser.id,
+        email: existingUser.email,
+        userType: existingUser.userType,
         tokenType: 'access',
       };
 
       const accessToken = await this.jwtService.signAsync(payload, {
         secret: process.env.JWT_ACCESS_SECRET,
-        expiresIn: process.env.JWT_ACCESS_EXPIRATION || '1d',
+        expiresIn: process.env.JWT_ACCESS_EXPIRATION as StringValue || '1d' as StringValue,
       });
 
       const decodedToken = this.jwtService.decode(accessToken) as {
@@ -108,28 +115,26 @@ export class AuthService {
   }
 
   async login(req: any, loginDto: LoginDTO, platform: string) {
-    if (!isEmail(loginDto.strEmail)) {
+    if (!isEmail(loginDto.email)) {
       throw new BadRequestException('Invalid email format');
     }
-    if (!loginDto.strPassword) {
+    if (!loginDto.password) {
       throw new BadRequestException('Password is required');
     }
     try {
       const user = await this.userRepository.findOne({
         select: {
-          intId: true,
-          strFirstName: true,
-          strLastName: true,
-          strEmail: true,
-          strPassword: true,
-          intEnroll: true,
-          strUserType: true,
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          password: true,
+          userType: true,
           isSuperAdmin: true,
-          avatarUrl: true,
           isActive: true,
         },
         where: {
-          strEmail: loginDto.strEmail,
+          email: loginDto.email,
         },
       });
 
@@ -143,15 +148,15 @@ export class AuthService {
         );
       }
 
-      if (user.strUserType === UserTypes.AREA_AUDITOR && platform === 'web') {
+      if (user.userType === UserTypes.OFFICER && platform === 'web') {
         throw new UnauthorizedException(
-          'Access denied: Area Auditor is not allowed to access Admin Panel.',
+          'Access denied: Officer is not allowed to access Admin Panel.',
         );
       }
 
       const passwordMatched = await compare(
-        loginDto.strPassword,
-        user.strPassword,
+        loginDto.password,
+        user.password!,
       );
       if (!passwordMatched) {
         throw new NotFoundException('Invalid email or password!');
@@ -169,14 +174,12 @@ export class AuthService {
         refreshToken.expiresIn,
       );
       return {
-        id: user.intId,
-        firstName: user.strFirstName,
-        lastName: user.strLastName,
-        email: user.strEmail,
-        enroll: user.intEnroll,
-        userType: user.strUserType,
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        userType: user.userType,
         isSuperAdmin: user.isSuperAdmin,
-        avatarUrl: user.avatarUrl,
         access_token: accessToken.accessToken,
         access_token_expiresIn: accessToken.expiresIn,
         refresh_token: refreshToken.refreshToken,
@@ -204,28 +207,28 @@ export class AuthService {
 
       if (
         !socialMediaLogin &&
-        registerDTO.strPassword !== registerDTO.strConfirmPassword
+        registerDTO.password !== registerDTO.confirmPassword
       ) {
         throw new UnauthorizedException('Password does not match!');
       }
 
       const isUserExist = await this.userService.findOneUserByEmail(
-        registerDTO.strEmail,
+        registerDTO.email!,
       );
 
       if (!socialMediaLogin && isUserExist) {
         throw new UnauthorizedException('User already exist!');
       } else if (socialMediaLogin && isUserExist) {
-        return await this.socialLogin(req, registerDTO.strEmail);
+        return await this.socialLogin(req, registerDTO);
       }
 
-      const userDto = new UserDto();
-      userDto.strEmail = registerDTO.strEmail;
-      userDto.strPassword = registerDTO.strPassword;
-      userDto.strFirstName = registerDTO.strFirstName;
-      userDto.strLastName = registerDTO.strLastName;
-      userDto.strPhoneNumber = registerDTO.strPhoneNumber;
-      userDto.authProvider = registerDTO.authProvider;
+      const userDto = new CreateUserDto();
+      userDto.email = registerDTO.email;
+      userDto.password = registerDTO.password;
+      userDto.firstName = registerDTO.firstName;
+      userDto.lastName = registerDTO.lastName;
+      userDto.phoneNumber = registerDTO.phoneNumber;
+      userDto.authProvider = registerDTO.authProvider as any; // Cast to any if AuthProvider is an enum; adjust based on actual type
 
       const user = await this.userService.createAdminUser(
         userDto,
@@ -235,35 +238,7 @@ export class AuthService {
         throw new InternalServerErrorException('Failed to create admin user');
       }
       console.log({ user });
-      //   try {
-      //     await this.sendOtp(user.email);
-      //   } catch (error) {
-      //     console.log(error);
-      //   }
       return user;
-
-      /*
-      const payload = {
-        email: user.strEmail,
-        orgId: user.intId,
-        userId: user.intId,
-        role: "admin",
-        tokenType: "refresh",
-      };
-
-      const refreshToken = await this.jwtService.signAsync(payload, {
-        secret: process.env.JWT_REFRESH_SECRET,
-        expiresIn: process.env.JWT_REFRESH_EXPIRATION || "30d",
-      });
-
-      await this.loginInfoRepository.save({
-        userId: user.intId,
-        strEmail: user.strEmail,
-        dteLastLogin: new Date(),
-        intEnroll: 1,
-        refresh_token: refreshToken,
-      });
-      */
     } catch (error) {
       console.log(error);
       return {
@@ -274,32 +249,36 @@ export class AuthService {
     }
   }
 
-  async socialLogin(req: any, email: string) {
+  async socialLogin(req: any, registerDTO: RegisterDTO) {
     try {
-      const user = await this.userService.findOneUserByEmail(email);
-      if (!user) {
-        throw new NotFoundException('User not found');
+      const existingUser = await this.userService.findOneUserByEmail(registerDTO.email!);
+      if (!existingUser) {
+        throw new NotFoundException('User not found for social login');
       }
-      const refreshToken = await this.generateRefreshToken(user);
-      const accessToken = await this.generateAccessToken(user);
+
+      if (!existingUser.isActive) {
+        throw new UnauthorizedException('Account is inactive');
+      }
+
+      const refreshToken = await this.generateRefreshToken(existingUser);
+      const accessToken = await this.generateAccessToken(existingUser);
 
       await this.logging(
-        user,
+        existingUser,
         req,
         accessToken.accessToken,
         accessToken.expiresIn,
         refreshToken.refreshToken,
         refreshToken.expiresIn,
       );
+
       return {
-        id: user.intId,
-        firstName: user.strFirstName,
-        lastName: user.strLastName,
-        email: user.strEmail,
-        enroll: user.intEnroll,
-        userType: user.strUserType,
-        avatarUrl: user.avatarUrl,
-        isSuperAdmin: user.isSuperAdmin,
+        id: existingUser.id,
+        firstName: existingUser.firstName,
+        lastName: existingUser.lastName,
+        email: existingUser.email,
+        userType: existingUser.userType,
+        isSuperAdmin: existingUser.isSuperAdmin,
         access_token: accessToken.accessToken,
         access_token_expiresIn: accessToken.expiresIn,
         refresh_token: refreshToken.refreshToken,
@@ -307,17 +286,17 @@ export class AuthService {
       };
     } catch (error) {
       console.error('Social login error:', error);
-      throw error;
+      throw new UnauthorizedException('Social login failed');
     }
   }
 
   async logout(strEmail: string) {
     try {
-      const result = await this.loginInfoRepository.findOneBy({ strEmail });
+      const result = await this.loginInfoRepository.findOneBy({ email: strEmail });
       if (!result) {
         return { statusCode: 404, message: 'User not found' };
       }
-      const userId = result.intId;
+      const userId = result.id;
       const logoutInfo = await this.loginInfoRepository.update(userId, {
         refresh_token: null,
         access_token: null, // Also invalidate the access token
@@ -345,7 +324,7 @@ export class AuthService {
     try {
       // Try to find existing login info for this user
       let loginLog = await this.loginInfoRepository.findOne({
-        where: { userId: user.intId },
+        where: { user_Id: user.id },
       });
 
       const ip =
@@ -355,9 +334,8 @@ export class AuthService {
 
       if (loginLog) {
         // Update existing login info
-        loginLog.strEmail = user.strEmail;
-        loginLog.intEnroll = user.intEnroll;
-        loginLog.dteLastLogin = new Date();
+        loginLog.email = user.email;
+        loginLog.dte_Last_Login = new Date();
         loginLog.ip = ipValue;
         loginLog.refresh_token = refreshToken;
         loginLog.refresh_token_expires = refresh_token_expire;
@@ -368,10 +346,9 @@ export class AuthService {
       } else {
         // Create new login info
         loginLog = new LoginInfo();
-        loginLog.userId = user.intId;
-        loginLog.strEmail = user.strEmail;
-        loginLog.intEnroll = user.intEnroll;
-        loginLog.dteLastLogin = new Date();
+        loginLog.user_Id = user.id;
+        loginLog.email = user.email;
+        loginLog.dte_Last_Login = new Date();
         loginLog.ip = ipValue;
         loginLog.refresh_token = refreshToken;
         loginLog.refresh_token_expires = refresh_token_expire;
@@ -433,36 +410,25 @@ export class AuthService {
         console.log('User not found with email:', decodedToken.email);
         throw new UnauthorizedException('User not found');
       }
-      console.log('User found:', existingUser.intId);
+      // console.log('User found:', existingUser.id);
 
-      if (!existingUser.isActive) {
-        throw new UnauthorizedException(
-          'Access denied: Your account is currently inactive.',
-        );
-      }
-      //   // Modified: lookup login info by userId (consistent with generateRefreshToken)
-      //   const loginInfo = await this.loginInfoRepository.findOne({
-      //     where: { userId: existingUser.intId },
-      //   });
-
-      //   if (!loginInfo || loginInfo.refresh_token !== refreshToken) {
-      //     console.log("Token mismatch or not found in database");
-      //     throw new UnauthorizedException(
-      //       "Refresh token has been revoked or replaced"
-      //     );
-      //   }
+      // if (!existingUser.isActive) {
+      //   throw new UnauthorizedException(
+      //     'Access denied: Your account is currently inactive.',
+      //   );
+      // }
 
       console.log('Generating new access tokens');
       //   const newRefreshToken = await this.generateRefreshToken(existingUser);
       const newAccessToken = await this.generateAccessToken(existingUser);
 
       return {
-        id: existingUser.intId,
-        firstName: existingUser.strFirstName,
-        lastName: existingUser.strLastName,
-        email: existingUser.strEmail,
-        enroll: existingUser.intEnroll,
-        userType: existingUser.strUserType,
+        id: existingUser.id,
+        firstName: existingUser.firstName,
+        lastName: existingUser.lastName,
+        email: existingUser.email,
+        enroll: existingUser.enroll,
+        userType: existingUser.userType,
         avatarUrl: existingUser.avatarUrl,
         isSuperAdmin: existingUser.isSuperAdmin,
         access_token: newAccessToken.accessToken,
@@ -482,7 +448,7 @@ export class AuthService {
       if (!user) {
         throw new UnauthorizedException('User not found');
       }
-      const passwordMatched = await compare(password, user.strPassword);
+      const passwordMatched = await compare(password, user.password);
       if (!passwordMatched) {
         throw new UnauthorizedException('Wrong password');
       }
@@ -503,11 +469,11 @@ export class AuthService {
     try {
       const user = await this.userRepository.findOne({
         select: {
-          intId: true,
-          strEmail: true,
-          strPassword: true,
+          id: true,
+          email: true,
+          password: true,
         },
-        where: { intId: loggedInUserId },
+        where: { id: loggedInUserId },
       });
       if (!user) {
         return {
@@ -517,8 +483,8 @@ export class AuthService {
       }
 
       const passwordMatched = await compare(
-        updatePasswordDTO.strCurrentPassword,
-        user.strPassword,
+        updatePasswordDTO.currentPassword!,
+        user.password!,
       );
       if (!passwordMatched) {
         return {
@@ -527,8 +493,8 @@ export class AuthService {
         };
       }
       if (
-        updatePasswordDTO.strNewPassword !==
-        updatePasswordDTO.strConfirmNewPassword
+        updatePasswordDTO.newPassword !==
+        updatePasswordDTO.confirmNewPassword
       ) {
         return {
           Status: HttpStatus.BAD_REQUEST,
@@ -537,8 +503,8 @@ export class AuthService {
       }
 
       if (
-        updatePasswordDTO.strCurrentPassword ===
-        updatePasswordDTO.strNewPassword
+        updatePasswordDTO.currentPassword ===
+        updatePasswordDTO.newPassword
       ) {
         return {
           Status: HttpStatus.BAD_REQUEST,
@@ -547,14 +513,14 @@ export class AuthService {
       }
 
       const hashedPassword = await hashPassword(
-        updatePasswordDTO.strNewPassword,
+        updatePasswordDTO.newPassword!,
       );
 
       await this.userService.updatePassword(
         loggedInUserId,
-        user.strEmail,
+        user.email,
         hashedPassword,
-        updatePasswordDTO.strNewPassword,
+        updatePasswordDTO.newPassword!,
       );
       return { Status: 200, message: 'Password updated' };
     } catch (error) {
@@ -601,7 +567,7 @@ export class AuthService {
       const expirationTime = currentTime + 5 * 60 * 1000; // 5 minutes in milliseconds
 
       // Update user with OTP and expiration
-      user.intOtp = otp;
+      user.otp = otp;
       user.otpExpiredAt = expirationTime;
       await this.userRepository.save(user);
 
@@ -668,7 +634,7 @@ export class AuthService {
       }
 
       // Check if OTP exists
-      if (!user.intOtp) {
+      if (!user.otp) {
         return {
           status: 400,
           message: 'No OTP found. Please request a new one.',
@@ -724,7 +690,7 @@ export class AuthService {
   async isEmailExist(email: string) {
     try {
       const userInfo = await this.loginInfoRepository.findOne({
-        where: { strEmail: email },
+        where: { email: email },
       });
       if (userInfo) {
         return {
@@ -736,97 +702,97 @@ export class AuthService {
     } catch (error) {}
   }
 
-  async sendOtp(email: string) {
-    try {
-      // Validate email format
-      if (!isEmail(email)) {
-        return { status: 400, message: 'Invalid email format' };
-      }
+  // async sendOtp(email: string) {
+  //   try {
+  //     // Validate email format
+  //     if (!isEmail(email)) {
+  //       return { status: 400, message: 'Invalid email format' };
+  //     }
 
-      const existingUser: User =
-        await this.userService.findOneUserByEmail(email);
-      if (!existingUser) {
-        return { status: 404, message: 'User not found' };
-      }
+  //     const existingUser: User =
+  //       await this.userService.findOneUserByEmail(email);
+  //     if (!existingUser) {
+  //       return { status: 404, message: 'User not found' };
+  //     }
 
-      if (!existingUser.isActive) {
-        return { status: 400, message: 'Account is inactive' };
-      }
+  //     if (!existingUser.isActive) {
+  //       return { status: 400, message: 'Account is inactive' };
+  //     }
 
-      if (existingUser.isEmailVerified) {
-        return { status: 400, message: 'Email is already verified' };
-      }
+  //     if (existingUser.isEmailVerified) {
+  //       return { status: 400, message: 'Email is already verified' };
+  //     }
 
-      // Generate OTP
-      const otp = randomNumGenerate.generateOTP();
+  //     // Generate OTP
+  //     const otp = randomNumGenerate.generateOTP();
 
-      // Set OTP expiration time (5 minutes from now)
-      const currentTime = new Date().getTime();
-      const expirationTime = currentTime + 5 * 60 * 1000; // 5 minutes in milliseconds
+  //     // Set OTP expiration time (5 minutes from now)
+  //     const currentTime = new Date().getTime();
+  //     const expirationTime = currentTime + 5 * 60 * 1000; // 5 minutes in milliseconds
 
-      // Update user with OTP and expiration
-      existingUser.intOtp = otp;
-      existingUser.otpExpiredAt = expirationTime;
-      await this.userRepository.save(existingUser);
+  //     // Update user with OTP and expiration
+  //     existingUser.intOtp = otp;
+  //     existingUser.otpExpiredAt = expirationTime;
+  //     await this.userRepository.save(existingUser);
 
-      // Send email
-      const mailBody = otpEmailBody(otp);
-      const emailResult = await sendMail(
-        email,
-        'MABI Email Verification OTP',
-        mailBody,
-      );
+  //     // Send email
+  //     const mailBody = otpEmailBody(otp);
+  //     const emailResult = await sendMail(
+  //       email,
+  //       'MABI Email Verification OTP',
+  //       mailBody,
+  //     );
 
-      if (!emailResult.success) {
-        console.error('Failed to send OTP email:', emailResult.message);
-        // Clear the OTP since email failed
-        existingUser.intOtp = 0;
-        existingUser.otpExpiredAt = 0;
-        await this.userRepository.save(existingUser);
+  //     if (!emailResult.success) {
+  //       console.error('Failed to send OTP email:', emailResult.message);
+  //       // Clear the OTP since email failed
+  //       existingUser.intOtp = 0;
+  //       existingUser.otpExpiredAt = 0;
+  //       await this.userRepository.save(existingUser);
 
-        return {
-          status: 500,
-          message: 'Failed to send email. Please try again later.',
-        };
-      }
+  //       return {
+  //         status: 500,
+  //         message: 'Failed to send email. Please try again later.',
+  //       };
+  //     }
 
-      console.log(`OTP sent successfully to ${email}`);
-      return {
-        status: 200,
-        message: 'OTP sent successfully to your email',
-      };
-    } catch (error) {
-      console.error('Send OTP error:', error);
-      return {
-        status: 500,
-        message: 'Internal server error. Please try again later.',
-        error: error.message,
-      };
-    }
-  }
+  //     console.log(`OTP sent successfully to ${email}`);
+  //     return {
+  //       status: 200,
+  //       message: 'OTP sent successfully to your email',
+  //     };
+  //   } catch (error) {
+  //     console.error('Send OTP error:', error);
+  //     return {
+  //       status: 500,
+  //       message: 'Internal server error. Please try again later.',
+  //       error: error.message,
+  //     };
+  //   }
+  // }
 
-  async verifyOtp(email: string, otpToVerify: number) {
-    try {
-      const user = await this.userService.findOneUserByEmail(email);
-      const currentTimestamp = new Date().getTime();
-      if (user && user.intOtp === otpToVerify) {
-        if (currentTimestamp > user.codeExpiredAt) {
-          return { status: 400, message: 'OTP expired' };
-        }
-        // user.isEmailVerified = true;
-        return { status: 200, message: 'OTP verified successfully' };
-      } else {
-        return { status: 400, message: 'Invalid OTP' };
-      }
-    } catch (error) {
-      console.error('Verification error:', error);
-      return {
-        status: 500,
-        message: 'Internal Server Error',
-        error: error.message,
-      };
-    }
-  }
+  // async verifyOtp(email: string, otpToVerify: number) {
+  //   try {
+  //     const user = await this.userService.findOneUserByEmail(email);
+  //     const currentTimestamp = new Date().getTime();
+  //     if (user && user.intOtp === otpToVerify) {
+  //       if (currentTimestamp > user.codeExpiredAt) {
+  //         return { status: 400, message: 'OTP expired' };
+  //       }
+  //       // user.isEmailVerified = true;
+  //       return { status: 200, message: 'OTP verified successfully' };
+  //     } else {
+  //       return { status: 400, message: 'Invalid OTP' };
+  //     }
+  //   } catch (error) {
+  //     console.error('Verification error:', error);
+  //     return {
+  //       status: 500,
+  //       message: 'Internal Server Error',
+  //       error: error.message,
+  //     };
+  //   }
+  // }
 
   async regenerateOtp(email: string) {
     try {

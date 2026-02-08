@@ -3,13 +3,11 @@ import { InjectEntityManager, InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Not, Repository } from 'typeorm';
 import { User } from '../entities/user.entity';
 import { UserPasswordSecurityManager } from '../entities/user-password-security-manager.entity';
-import { JwtService } from '@nestjs/jwt/dist/jwt.service';
 import { CreateUserDto } from '../dto/create-user.dto';
 import { UserTypes } from '../data/user-type.enum';
 import { Gender } from '../data/user-gender.enum';
 import { hashPassword } from 'src/utils/bcrypt';
 import { UpdateUserDto } from '../dto/update-user.dto';
-// import { isEmpty } from 'class-validator/types/decorator/common/IsEmpty';
 
 
 @Injectable()
@@ -19,8 +17,6 @@ export class UsersService {
     private userRepository: Repository<User>,
     @InjectRepository(UserPasswordSecurityManager)
     private userPasswordSecurityManagerRepository: Repository<UserPasswordSecurityManager>,
-    @Inject(JwtService)
-    private jwtService: JwtService,
 
     @InjectEntityManager()
     private entityManager: EntityManager,
@@ -169,13 +165,16 @@ export class UsersService {
         delete cleanedUpdateDto.password;
         delete cleanedUpdateDto.confirmPassword;
       } else {
-        cleanedUpdateDto.password = await hashPassword(updateUserDto.password!);
+        cleanedUpdateDto.password = await hashPassword(
+          updateUserDto.password!,
+        );
         delete cleanedUpdateDto.confirmPassword;
       }
 
       const updateData = {
         ...cleanedUpdateDto,
-        fullName: cleanedUpdateDto.firstName + ' ' + cleanedUpdateDto.lastName,
+        fullName:
+          cleanedUpdateDto.firstName + ' ' + cleanedUpdateDto.lastName,
         updatedBy: userId,
       };
 
@@ -300,6 +299,18 @@ export class UsersService {
         message: error.message,
         error: 'Internal Server Error',
       };
+    }
+  }
+
+  async findOneUserByEmail(strEmail: string) {
+    try {
+      const info = await this.userRepository.findOne({
+        where: { email: strEmail, isActive: true },
+      });
+
+      return info;
+    } catch (error) {
+      return error;
     }
   }
 }
