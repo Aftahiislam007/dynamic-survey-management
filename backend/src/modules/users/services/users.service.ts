@@ -3,13 +3,11 @@ import { InjectEntityManager, InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Not, Repository } from 'typeorm';
 import { User } from '../entities/user.entity';
 import { UserPasswordSecurityManager } from '../entities/user-password-security-manager.entity';
-import { JwtService } from '@nestjs/jwt/dist/jwt.service';
 import { CreateUserDto } from '../dto/create-user.dto';
 import { UserTypes } from '../data/user-type.enum';
 import { Gender } from '../data/user-gender.enum';
 import { hashPassword } from 'src/utils/bcrypt';
 import { UpdateUserDto } from '../dto/update-user.dto';
-// import { isEmpty } from 'class-validator/types/decorator/common/IsEmpty';
 
 
 @Injectable()
@@ -19,8 +17,6 @@ export class UsersService {
     private userRepository: Repository<User>,
     @InjectRepository(UserPasswordSecurityManager)
     private userPasswordSecurityManagerRepository: Repository<UserPasswordSecurityManager>,
-    @Inject(JwtService)
-    private jwtService: JwtService,
 
     @InjectEntityManager()
     private entityManager: EntityManager,
@@ -169,13 +165,16 @@ export class UsersService {
         delete cleanedUpdateDto.password;
         delete cleanedUpdateDto.confirmPassword;
       } else {
-        cleanedUpdateDto.password = await hashPassword(updateUserDto.password!);
+        cleanedUpdateDto.password = await hashPassword(
+          updateUserDto.password!,
+        );
         delete cleanedUpdateDto.confirmPassword;
       }
 
       const updateData = {
         ...cleanedUpdateDto,
-        fullName: cleanedUpdateDto.firstName + ' ' + cleanedUpdateDto.lastName,
+        fullName:
+          cleanedUpdateDto.firstName + ' ' + cleanedUpdateDto.lastName,
         updatedBy: userId,
       };
 
@@ -269,7 +268,7 @@ export class UsersService {
       ) {
         return {
           Status: 400,
-          message: 'Regional Managers cannot delete Admins',
+          message: 'Officers cannot delete Admins',
           error: 'Bad Request',
         };
       }
@@ -300,6 +299,127 @@ export class UsersService {
         message: error.message,
         error: 'Internal Server Error',
       };
+    }
+  }
+
+  async findOneUserByEmail(strEmail: string) {
+    try {
+      const info = await this.userRepository.findOne({
+        where: { email: strEmail, isActive: true },
+      });
+
+      return info;
+    } catch (error) {
+      return error;
+    }
+  }
+
+  async createAdminUser(userDto: CreateUserDto, socialMediaLogin: boolean) {
+    // create admin user without supervisor id and role id and enroll id
+    // check if isSuperAdmin exist
+    const findSuperAdmin = await this.userRepository.findOne({
+      where: { isSuperAdmin: true },
+    });
+    if (findSuperAdmin)
+      throw new NotFoundException('Super Admin already exists');
+
+    try {
+      const isEmailExist = await this.userRepository.findOne({
+        where: { email: userDto.email },
+      });
+      if (isEmailExist) throw new NotFoundException('Email already exists');
+
+      const hashedPassword = await hashPassword(userDto.password!);
+      let password: string | undefined = '';
+      if (socialMediaLogin) {
+        password = undefined;
+      } else {
+        password = hashedPassword;
+      }
+
+      const adminUser = await this.userRepository.save({
+        ...userDto,
+        strFullName: userDto.firstName + ' ' + userDto.lastName,
+        isSuperAdmin: true,
+        strUserType: UserTypes.SUPER_ADMIN,
+        strPassword: password,
+      });
+
+      const userPasswordSecurityManager =
+        this.userPasswordSecurityManagerRepository.create({
+          decryptedPassword: userDto.password,
+          user: adminUser,
+          userId: adminUser.id,
+          createdBy: adminUser.id,
+        });
+      await this.userPasswordSecurityManagerRepository.save(
+        userPasswordSecurityManager,
+      );
+
+      return {
+        id: adminUser.id,
+        email: adminUser.email,
+        name: adminUser.firstName + ' ' + adminUser.lastName,
+        phoneNumber: adminUser.phoneNumber,
+        userType: adminUser.userType,
+        isSuperAdmin: adminUser.isSuperAdmin,
+        isEmailVerified: adminUser.isEmailVerified,
+        token: null,
+        createdAt: adminUser.createdAt,
+        updatedAt: adminUser.updatedAt,
+      };
+    } catch (error) {
+      return error.response;
+    }
+  }
+
+  async updatePassword(
+    loggedInUserId: number,
+    strEmail: string,
+    hashedPassword: string,
+    decodedPassword: string,
+  ) {
+    try {
+      const checkLoggedInUser = await this.userRepository.findOne({
+        where: { id: loggedInUserId, email: strEmail },
+      });
+      if (!checkLoggedInUser) throw new NotFoundException('User not found');
+
+      //   const hashedPassword = await hashPassword(strPassword);
+
+      const result = await this.userRepository.update(
+        { email: strEmail },
+        { password: hashedPassword },
+      );
+      if (!result) throw new NotFoundException('Password update failed');
+      const getUserPasswordSecurityManager =
+        await this.userPasswordSecurityManagerRepository.findOne({
+          where: { userId: checkLoggedInUser.id },
+        });
+      if (!getUserPasswordSecurityManager) {
+        const userPasswordSecurityManager = new UserPasswordSecurityManager();
+        userPasswordSecurityManager.userId = checkLoggedInUser.id;
+        userPasswordSecurityManager.user = checkLoggedInUser;
+        userPasswordSecurityManager.decryptedPassword = decodedPassword;
+        userPasswordSecurityManager.updatedBy = loggedInUserId;
+        await this.userPasswordSecurityManagerRepository.save(
+          userPasswordSecurityManager,
+        );
+      } else {
+        getUserPasswordSecurityManager.decryptedPassword = decodedPassword;
+        getUserPasswordSecurityManager.updatedBy = loggedInUserId;
+        await this.userPasswordSecurityManagerRepository.save(
+          getUserPasswordSecurityManager,
+        );
+      }
+      return {
+        Status: 200,
+        message: 'Password updated successfully',
+      };
+    } catch (error) {
+      throw new InternalServerErrorException(
+        `Failed to update password: ${error.message}`,
+      );
     }
   }
 }
