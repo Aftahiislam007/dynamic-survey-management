@@ -1,4 +1,3 @@
-
 import {
   Column,
   Entity,
@@ -11,6 +10,8 @@ import {
 import { UserTypes } from '../data/user-type.enum';
 import { Gender } from '../data/user-gender.enum';
 import { AuthProvider } from '../data/auth-provider.enum';
+import { CustomBaseEntity } from 'src/common/entity/custom-base.entity';
+import { NumberTransformer } from 'src/config/number-transformer.config';
 
 
 @Entity('tbl_users')
