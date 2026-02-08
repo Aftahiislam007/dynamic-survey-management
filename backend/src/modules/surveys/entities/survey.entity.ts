@@ -1,5 +1,14 @@
-import { Column, Entity, JoinColumn, ManyToOne } from 'typeorm';
+import {
+  Entity,
+  Column,
+  CreateDateColumn,
+  OneToMany,
+  ManyToOne,
+  JoinColumn,
+} from 'typeorm';
 import { CustomBaseEntity } from 'src/common/entity/custom-base.entity';
+import { Field } from '../../fields/entities/field.entity';
+import { Submission } from '../../submissions/entities/submission.entity';
 import { SurveyStatus } from '../data/survey-status.enum';
 import { User } from 'src/modules/users/entities/user.entity';
 
@@ -40,4 +49,10 @@ export class Survey extends CustomBaseEntity {
 
   @Column({ type: 'int', nullable: true })
   assignedOfficerId?: number;
+
+  @OneToMany(() => Field, (field) => field.survey, { cascade: true })
+  fields?: Field[];
+
+  @OneToMany(() => Submission, (submission) => submission.survey)
+  submissions?: Submission[];
 }

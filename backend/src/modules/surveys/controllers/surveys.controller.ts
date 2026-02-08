@@ -6,14 +6,22 @@ import {
   Param,
   Put,
   Delete,
+  Query,
   UseGuards,
-  HttpStatus,
   Request,
   Res,
   Req,
   Patch,
   NotFoundException,
+  HttpStatus,
+  ParseIntPipe,
 } from '@nestjs/common';
+import { SurveysService } from '../services/surveys.service';
+import { CreateSurveyDto } from '../dto/create-survey.dto';
+import { UpdateSurveyDto } from '../dto/update-survey.dto';
+import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { AccessControlGuard } from 'src/common/guards/access-control.guard';
+import { AllowedUserTypes } from 'src/decorators/allowed-user-types.decorator';
 
 import {
   ApiTags,
@@ -21,44 +29,34 @@ import {
   ApiOperation,
   ApiResponse,
   ApiParam,
+  ApiQuery,
   ApiBody,
 } from '@nestjs/swagger';
+import { Survey } from '../entities/survey.entity';
 import { ThrottlerGuard } from '@nestjs/throttler/dist/throttler.guard';
-import { AccessControlGuard } from 'src/common/guards/access-control.guard';
-import { AllowedUserTypes } from 'src/decorators/allowed-user-types.decorator';
-import { CreateSurveyDto } from '../dto/create-survey.dto';
-import { SurveysService } from '../services/surveys.service';
-import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { notFound, requestInvalid, success } from 'src/helpers/http';
 import { REQUEST_ERROR, SUCCESS } from 'src/shared/constants/httpCodes';
 import { handleInternalError } from 'src/shared/error/handleInternalError';
 import type { Response } from 'express';
-import { UpdateSurveyDto } from '../dto/update-survey.dto';
 import { SurveyStatus } from '../data/survey-status.enum';
 import { UserTypes } from 'src/modules/users/data/user-type.enum';
 
 @ApiTags('📊🔒Survey API')
 @UseGuards(ThrottlerGuard, JwtAuthGuard, AccessControlGuard)
 @ApiBearerAuth()
-@Controller('survey')
-export class SurveyController {
-  constructor(private readonly surveyService: SurveysService) {}
+@Controller('surveys')
+export class SurveysController {
+  constructor(private readonly surveysService: SurveysService) {}
 
-  @Post('create')
+  @Post()
   @AllowedUserTypes(UserTypes.ADMIN, UserTypes.SUPER_ADMIN, UserTypes.OFFICER)
   @ApiBody({ type: CreateSurveyDto })
   @ApiOperation({ summary: 'Create a new survey' })
-  @ApiResponse({ status: 201, description: 'Survey created successfully' })
+  @ApiResponse({ status: 201, description: 'Survey created successfully', type: Survey })
   @ApiResponse({ status: 400, description: 'Bad request' })
-  async createSurvey(
-    @Request() request: any,
-    @Body() surveyDto: CreateSurveyDto,
-  ) {
+  async create(@Request() request: any, @Body() createSurveyDto: CreateSurveyDto) {
     try {
-      const data = await this.surveyService.createSurvey(
-        +request.user.id,
-        surveyDto,
-      );
+      const data = await this.surveysService.create(+request.user.id, createSurveyDto);
 
       return {
         statusCode: HttpStatus.CREATED,
@@ -72,15 +70,21 @@ export class SurveyController {
 
   @Get()
   @AllowedUserTypes(UserTypes.ADMIN, UserTypes.SUPER_ADMIN, UserTypes.OFFICER)
-  @ApiOperation({ summary: 'Get all surveys' })
-  @ApiResponse({ status: 200, description: 'Return all surveys' })
+  @ApiOperation({ summary: 'Get all surveys (paginated)' })
+  @ApiQuery({ name: 'page', type: Number, required: false })
+  @ApiQuery({ name: 'limit', type: Number, required: false })
+  @ApiResponse({ status: 200, description: 'Return all surveys', type: [Survey] })
   @ApiResponse({ status: 404, description: 'No surveys found' })
-  async findAll() {
+  async findAll(@Query('page') page: number = 1, @Query('limit') limit: number = 10) {
     try {
+      const result = await this.surveysService.findAll(page, limit);
       return {
         statusCode: HttpStatus.OK,
         message: 'All surveys',
-        data: await this.surveyService.findAll(),
+        data: result.data,
+        total: result.total,
+        page: page,
+        limit: limit,
       };
     } catch (error) {
       throw error;
@@ -94,7 +98,7 @@ export class SurveyController {
   @ApiResponse({ status: 404, description: 'No active surveys found' })
   async findActiveSurveys(@Req() request: Request, @Res() response: Response) {
     try {
-      const data: any = await this.surveyService.findActiveSurveys();
+      const data: any = await this.surveysService.findActiveSurveys();
       if (data.length === 0) {
         return response
           .status(404)
@@ -111,11 +115,7 @@ export class SurveyController {
   @Get('status/:status')
   @AllowedUserTypes(UserTypes.ADMIN, UserTypes.SUPER_ADMIN, UserTypes.OFFICER)
   @ApiOperation({ summary: 'Get surveys by status' })
-  @ApiParam({
-    name: 'status',
-    enum: SurveyStatus,
-    description: 'Survey status',
-  })
+  @ApiParam({ name: 'status', enum: SurveyStatus, description: 'Survey status' })
   @ApiResponse({ status: 200, description: 'Return surveys by status' })
   @ApiResponse({ status: 404, description: 'No surveys found' })
   async findByStatus(
@@ -124,7 +124,7 @@ export class SurveyController {
     @Param('status') status: SurveyStatus,
   ) {
     try {
-      const data = await this.surveyService.findSurveysByStatus(status);
+      const data = await this.surveysService.findSurveysByStatus(status);
       if (data.length === 0) {
         return response
           .status(404)
@@ -140,16 +140,17 @@ export class SurveyController {
 
   @Get(':id')
   @AllowedUserTypes(UserTypes.ADMIN, UserTypes.SUPER_ADMIN, UserTypes.OFFICER)
-  @ApiOperation({ summary: 'Find survey by ID' })
-  @ApiResponse({ status: 200, description: 'Survey found' })
+  @ApiOperation({ summary: 'Get survey by ID' })
+  @ApiParam({ name: 'id', type: Number })
+  @ApiResponse({ status: 200, description: 'Survey found', type: Survey })
   @ApiResponse({ status: 404, description: 'Survey not found' })
-  async findById(
+  async findOne(
     @Req() request: Request,
     @Res() response: Response,
-    @Param('id') id: number,
+    @Param('id', ParseIntPipe) id: number,
   ) {
     try {
-      const data = await this.surveyService.findById(id);
+      const data = await this.surveysService.findOne(id);
       if (data === null) {
         throw new NotFoundException('Survey not found');
       }
@@ -160,24 +161,24 @@ export class SurveyController {
     }
   }
 
-  @Patch('update/:id')
+  @Put(':id')
   @AllowedUserTypes(UserTypes.ADMIN, UserTypes.SUPER_ADMIN, UserTypes.OFFICER)
   @ApiOperation({ summary: 'Update survey information' })
-  @ApiParam({ name: 'id', description: 'Survey identifier' })
-  @ApiResponse({ status: 200, description: 'Survey updated successfully' })
+  @ApiParam({ name: 'id', description: 'Survey identifier', type: Number })
+  @ApiResponse({ status: 200, description: 'Survey updated successfully', type: Survey })
   @ApiResponse({ status: 404, description: 'Survey not found' })
-  async updateSurvey(
+  async update(
     @Request() request: any,
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body() updateSurveyDto: UpdateSurveyDto,
   ) {
     try {
       return {
         statusCode: HttpStatus.OK,
         message: 'Survey updated successfully',
-        data: await this.surveyService.updateSurvey(
+        data: await this.surveysService.update(
           +request.user.id,
-          +id,
+          id,
           updateSurveyDto,
         ),
       };
@@ -189,7 +190,7 @@ export class SurveyController {
   @Patch('update-status/:id')
   @AllowedUserTypes(UserTypes.ADMIN, UserTypes.SUPER_ADMIN)
   @ApiOperation({ summary: 'Update survey status' })
-  @ApiParam({ name: 'id', description: 'Survey identifier' })
+  @ApiParam({ name: 'id', description: 'Survey identifier', type: Number })
   @ApiBody({
     schema: {
       type: 'object',
@@ -201,23 +202,20 @@ export class SurveyController {
       },
     },
   })
-  @ApiResponse({
-    status: 200,
-    description: 'Survey status updated successfully',
-  })
+  @ApiResponse({ status: 200, description: 'Survey status updated successfully' })
   @ApiResponse({ status: 404, description: 'Survey not found' })
   async updateStatus(
     @Request() request: any,
-    @Param('id') id: string,
+    @Param('id', ParseIntPipe) id: number,
     @Body('status') status: SurveyStatus,
   ) {
     try {
       return {
         statusCode: HttpStatus.OK,
         message: 'Survey status updated successfully',
-        data: await this.surveyService.updateSurveyStatus(
+        data: await this.surveysService.updateSurveyStatus(
           +request.user.id,
-          +id,
+          id,
           status,
         ),
       };
@@ -226,31 +224,25 @@ export class SurveyController {
     }
   }
 
-  @Delete('delete/:id')
+  @Delete(':id')
   @AllowedUserTypes(UserTypes.ADMIN, UserTypes.SUPER_ADMIN)
   @ApiOperation({ summary: 'Delete a survey' })
+  @ApiParam({ name: 'id', type: Number })
   @ApiResponse({ status: 200, description: 'Survey deleted successfully' })
   @ApiResponse({ status: 404, description: 'Survey not found' })
-  async deleteSurvey(
+  async remove(
     @Request() request: any,
     @Res() response: Response,
-    @Param('id') id: number,
+    @Param('id', ParseIntPipe) id: number,
   ) {
     try {
-      const data: any = await this.surveyService.deleteSurvey(request.user, id);
-      if (data?.Status === 404) {
-        return response.status(404).json(notFound('No survey found'));
-      }
-
-      if (data.Status === 400) {
-        return response
-          .status(REQUEST_ERROR)
-          .json(requestInvalid(data.message));
-      }
-
-      return response.status(SUCCESS).json(success(data));
+      await this.surveysService.remove(request.user, id);
+      return response.status(SUCCESS).json(success({ message: 'Survey deleted successfully' }));
     } catch (error) {
-      return response.status(REQUEST_ERROR).json(requestInvalid(error));
+      if (error instanceof NotFoundException) {
+        return response.status(404).json(notFound('Survey not found'));
+      }
+      return response.status(REQUEST_ERROR).json(requestInvalid(error.message));
     }
   }
 }
