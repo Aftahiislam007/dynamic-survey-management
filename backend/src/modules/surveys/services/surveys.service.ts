@@ -16,32 +16,29 @@ export class SurveysService {
     private entityManager: EntityManager,
   ) {}
 
-  async createSurvey(
-    userId: number,
-    surveyDto: CreateSurveyDto,
-  ): Promise<Survey> {
+  async create(userId: number, createSurveyDto: CreateSurveyDto): Promise<Survey> {
     try {
-      console.log(surveyDto);
+      console.log(createSurveyDto);
 
-      if (!surveyDto.title) throw new BadRequestException('Title is required');
+      if (!createSurveyDto.title) throw new BadRequestException('Title is required');
 
       // Validate status if provided
-      if (surveyDto.status) {
+      if (createSurveyDto.status) {
         const statuses = Object.values(SurveyStatus);
-        if (!statuses.includes(surveyDto.status as SurveyStatus))
+        if (!statuses.includes(createSurveyDto.status as SurveyStatus))
           throw new BadRequestException('Invalid survey status');
       }
 
       // Validate dates
-      if (surveyDto.startDate && surveyDto.endDate) {
-        if (new Date(surveyDto.startDate) > new Date(surveyDto.endDate)) {
+      if (createSurveyDto.startDate && createSurveyDto.endDate) {
+        if (new Date(createSurveyDto.startDate) > new Date(createSurveyDto.endDate)) {
           throw new BadRequestException('Start date must be before end date');
         }
       }
 
       const survey = this.surveyRepository.create({
-        ...surveyDto,
-        status: surveyDto.status || SurveyStatus.DRAFT,
+        ...createSurveyDto,
+        status: createSurveyDto.status || SurveyStatus.DRAFT,
         totalResponses: 0,
         isActive: true,
         createdBy: userId,
@@ -56,18 +53,20 @@ export class SurveysService {
     }
   }
 
-  async findAll(): Promise<Survey[]> {
+  async findAll(page: number = 1, limit: number = 10): Promise<{ data: Survey[]; total: number }> {
     try {
-      const info = await this.surveyRepository.find({
+      const [data, total] = await this.surveyRepository.findAndCount({
         where: {
           isActive: true,
         },
-        relations: ['assignedOfficer'],
+        relations: ['fields', 'assignedOfficer'],
+        take: limit,
+        skip: (page - 1) * limit,
         order: {
           createdAt: 'DESC',
         },
       });
-      return info;
+      return { data, total };
     } catch (error) {
       throw error;
     }
@@ -80,7 +79,7 @@ export class SurveysService {
           isActive: true,
           status: SurveyStatus.ACTIVE,
         },
-        relations: ['assignedOfficer'],
+        relations: ['fields', 'assignedOfficer'],
       });
       console.log(info);
       return info;
@@ -89,11 +88,11 @@ export class SurveysService {
     }
   }
 
-  async findById(id: number) {
+  async findOne(id: number): Promise<Survey | null> {
     try {
       const info = await this.surveyRepository.findOne({
         where: { id: id, isActive: true },
-        relations: ['assignedOfficer'],
+        relations: ['fields', 'assignedOfficer'],
       });
       return info;
     } catch (error) {
@@ -101,14 +100,22 @@ export class SurveysService {
     }
   }
 
-  async updateSurvey(
-    userId: number,
-    id: number,
-    updateSurveyDto: UpdateSurveyDto,
-  ): Promise<Survey> {
+  async findById(intId: number): Promise<Survey | null> {
+    try {
+      const info = await this.surveyRepository.findOne({
+        where: { id: intId, isActive: true },
+        relations: ['fields', 'assignedOfficer'],
+      });
+      return info;
+    } catch (error) {
+      throw error;
+    }
+  }
+
+  async update(userId: number, id: number, updateSurveyDto: UpdateSurveyDto): Promise<Survey> {
     try {
       // Check existing survey
-      const existingSurvey = await this.findById(id);
+      const existingSurvey = await this.findOne(id);
 
       if (!existingSurvey)
         throw new NotFoundException('Survey not found');
@@ -150,29 +157,22 @@ export class SurveysService {
     }
   }
 
-  async deleteSurvey(deletedBy: any, id: number) {
+  async remove(deletedBy: any, id: number): Promise<void> {
     try {
       const surveyInfo = await this.surveyRepository.findOneBy({ id: id });
       if (!surveyInfo) {
-        return {
-          Status: 404,
-          message: 'Survey not found',
-          error: 'Not Found',
-        };
+        throw new NotFoundException('Survey not found');
       }
 
       await this.surveyRepository.update(id, {
         isActive: false,
         deletedBy: deletedBy.id || deletedBy.intId,
       });
-      const info = await this.surveyRepository.softDelete(id);
-      return info;
+      await this.surveyRepository.softDelete(id);
     } catch (error) {
-      return {
-        Status: 500,
-        message: error.message,
-        error: 'Internal Server Error',
-      };
+      throw new InternalServerErrorException(
+        `Failed to delete survey: ${error.message}`,
+      );
     }
   }
 
@@ -183,7 +183,7 @@ export class SurveysService {
           isActive: true,
           status: status,
         },
-        relations: ['assignedOfficer'],
+        relations: ['fields', 'assignedOfficer'],
       });
       return info;
     } catch (error) {
@@ -197,7 +197,7 @@ export class SurveysService {
     status: SurveyStatus,
   ): Promise<Survey> {
     try {
-      const survey = await this.findById(id);
+      const survey = await this.findOne(id);
       if (!survey) throw new NotFoundException('Survey not found');
 
       survey.status = status;
@@ -213,7 +213,7 @@ export class SurveysService {
 
   async incrementResponseCount(id: number): Promise<Survey> {
     try {
-      const survey = await this.findById(id);
+      const survey = await this.findOne(id);
       if (!survey) throw new NotFoundException('Survey not found');
 
       survey.totalResponses = (survey.totalResponses || 0) + 1;

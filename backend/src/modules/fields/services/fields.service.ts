@@ -49,7 +49,7 @@ export class FieldsService {
       }
 
       // Check if survey exists
-      const survey = await this.surveysService.findOne(surveyId);
+      const survey = await this.surveysService.findOne(+surveyId);
       if (!survey) {
         throw new NotFoundException('Survey not found');
       }
