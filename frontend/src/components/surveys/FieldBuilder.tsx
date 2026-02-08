@@ -6,9 +6,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { fieldService } from '@/lib/api/fields';
 import { FieldType, CreateFieldDto } from '@/types/field';
-import { Plus, Trash2, GripVertical, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { DragDropContext, Droppable, Draggable, DropResult } from 'react-beautiful-dnd';
 
 const fieldSchema = z.object({
   fields: z.array(
@@ -66,7 +65,6 @@ const FieldBuilder: React.FC<FieldBuilderProps> = ({ surveyId }) => {
       const data = await fieldService.getAll(surveyId);
       setExistingFields(data);
       
-      // If there are existing fields, populate the form
       if (data.length > 0) {
         reset({
           fields: data.map((field, index) => ({
@@ -111,11 +109,6 @@ const FieldBuilder: React.FC<FieldBuilderProps> = ({ surveyId }) => {
     });
   };
 
-  const onDragEnd = (result: DropResult) => {
-    if (!result.destination) return;
-    moveField(result.source.index, result.destination.index);
-  };
-
   const onSubmit = async (data: any) => {
     setIsSaving(true);
     try {
@@ -138,7 +131,6 @@ const FieldBuilder: React.FC<FieldBuilderProps> = ({ surveyId }) => {
           order: index,
         };
 
-        // Add options for field types that need them
         if ([FieldType.CHECKBOX, FieldType.RADIO, FieldType.SELECT].includes(field.type)) {
           const options = field.options;
           if (options && options.length > 0) {
@@ -186,171 +178,144 @@ const FieldBuilder: React.FC<FieldBuilderProps> = ({ surveyId }) => {
       </div>
 
       <form onSubmit={handleSubmit(onSubmit)}>
-        <DragDropContext onDragEnd={onDragEnd}>
-          <Droppable droppableId="fields">
-            {(provided) => (
-              <div
-                {...provided.droppableProps}
-                ref={provided.innerRef}
-                className="space-y-4"
-              >
-                {fields.map((field, index) => (
-                  <Draggable
-                    key={field.id}
-                    draggableId={field.id}
-                    index={index}
-                  >
-                    {(provided) => (
-                      <div
-                        ref={provided.innerRef}
-                        {...provided.draggableProps}
-                        className="bg-gray-50 border border-gray-200 rounded-lg p-4"
-                      >
-                        <div className="flex items-start space-x-4">
-                          <div
-                            {...provided.dragHandleProps}
-                            className="cursor-move pt-2"
-                          >
-                            <GripVertical className="h-5 w-5 text-gray-400" />
-                          </div>
-
-                          <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* Field Label */}
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Label *
-                              </label>
-                              <input
-                                type="text"
-                                {...register(`fields.${index}.label`)}
-                                className="input-field"
-                                placeholder="e.g., Email Address"
-                              />
-                              {errors.fields?.[index]?.label && (
-                                <p className="mt-1 text-sm text-red-600">
-                                  {errors.fields[index].label?.message}
-                                </p>
-                              )}
-                            </div>
-
-                            {/* Field Type */}
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Type *
-                              </label>
-                              <select
-                                {...register(`fields.${index}.type`)}
-                                className="input-field"
-                              >
-                                <option value={FieldType.TEXT}>Text Input</option>
-                                <option value={FieldType.TEXTAREA}>Text Area</option>
-                                <option value={FieldType.NUMBER}>Number</option>
-                                <option value={FieldType.CHECKBOX}>Checkbox</option>
-                                <option value={FieldType.RADIO}>Radio Button</option>
-                                <option value={FieldType.SELECT}>Select Dropdown</option>
-                              </select>
-                            </div>
-
-                            {/* Placeholder */}
-                            <div>
-                              <label className="block text-sm font-medium text-gray-700 mb-1">
-                                Placeholder
-                              </label>
-                              <input
-                                type="text"
-                                {...register(`fields.${index}.placeholder`)}
-                                className="input-field"
-                                placeholder="e.g., Enter your email"
-                              />
-                            </div>
-
-                            {/* Required */}
-                            <div className="flex items-center space-x-2">
-                              <input
-                                type="checkbox"
-                                id={`required-${index}`}
-                                {...register(`fields.${index}.required`)}
-                                className="h-4 w-4 text-primary-600 rounded"
-                              />
-                              <label
-                                htmlFor={`required-${index}`}
-                                className="text-sm font-medium text-gray-700"
-                              >
-                                Required field
-                              </label>
-                            </div>
-
-                            {/* Options (for checkbox, radio, select) */}
-                            {[
-                              FieldType.CHECKBOX,
-                              FieldType.RADIO,
-                              FieldType.SELECT,
-                            ].includes(watchFields[index]?.type) && (
-                              <div className="md:col-span-2">
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                  Options (comma-separated) *
-                                </label>
-                                <input
-                                  type="text"
-                                  {...register(`fields.${index}.options`)}
-                                  className="input-field"
-                                  placeholder="e.g., Option 1, Option 2, Option 3"
-                                />
-                                <p className="mt-1 text-sm text-gray-500">
-                                  Separate options with commas
-                                </p>
-                              </div>
-                            )}
-
-                            {/* Order Input (hidden) */}
-                            <input
-                              type="hidden"
-                              {...register(`fields.${index}.order`)}
-                              value={index}
-                            />
-                          </div>
-
-                          {/* Remove Button */}
-                          <button
-                            type="button"
-                            onClick={() => removeField(index)}
-                            className="text-red-600 hover:text-red-800 p-2"
-                            title="Remove field"
-                          >
-                            <Trash2 className="h-5 w-5" />
-                          </button>
-                        </div>
-
-                        {/* Move up/down buttons for mobile */}
-                        <div className="flex justify-between mt-4 md:hidden">
-                          <button
-                            type="button"
-                            onClick={() => moveField(index, index - 1)}
-                            disabled={index === 0}
-                            className="flex items-center space-x-1 text-sm text-gray-600 disabled:opacity-50"
-                          >
-                            <ChevronUp className="h-4 w-4" />
-                            <span>Move Up</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moveField(index, index + 1)}
-                            disabled={index === fields.length - 1}
-                            className="flex items-center space-x-1 text-sm text-gray-600 disabled:opacity-50"
-                          >
-                            <ChevronDown className="h-4 w-4" />
-                            <span>Move Down</span>
-                          </button>
-                        </div>
-                      </div>
+        <div className="space-y-4">
+          {fields.map((field, index) => (
+            <div
+              key={field.id}
+              className="bg-gray-50 border border-gray-200 rounded-lg p-4"
+            >
+              <div className="flex items-start space-x-4">
+                <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Field Label */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Label *
+                    </label>
+                    <input
+                      type="text"
+                      {...register(`fields.${index}.label`)}
+                      className="input-field"
+                      placeholder="e.g., Email Address"
+                    />
+                    {errors.fields?.[index]?.label && (
+                      <p className="mt-1 text-sm text-red-600">
+                        {errors.fields[index].label?.message}
+                      </p>
                     )}
-                  </Draggable>
-                ))}
-                {provided.placeholder}
+                  </div>
+
+                  {/* Field Type */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Type *
+                    </label>
+                    <select
+                      {...register(`fields.${index}.type`)}
+                      className="input-field"
+                    >
+                      <option value={FieldType.TEXT}>Text Input</option>
+                      <option value={FieldType.TEXTAREA}>Text Area</option>
+                      <option value={FieldType.NUMBER}>Number</option>
+                      <option value={FieldType.CHECKBOX}>Checkbox</option>
+                      <option value={FieldType.RADIO}>Radio Button</option>
+                      <option value={FieldType.SELECT}>Select Dropdown</option>
+                    </select>
+                  </div>
+
+                  {/* Placeholder */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Placeholder
+                    </label>
+                    <input
+                      type="text"
+                      {...register(`fields.${index}.placeholder`)}
+                      className="input-field"
+                      placeholder="e.g., Enter your email"
+                    />
+                  </div>
+
+                  {/* Required */}
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id={`required-${index}`}
+                      {...register(`fields.${index}.required`)}
+                      className="h-4 w-4 text-primary-600 rounded"
+                    />
+                    <label
+                      htmlFor={`required-${index}`}
+                      className="text-sm font-medium text-gray-700"
+                    >
+                      Required field
+                    </label>
+                  </div>
+
+                  {/* Options (for checkbox, radio, select) */}
+                  {[
+                    FieldType.CHECKBOX,
+                    FieldType.RADIO,
+                    FieldType.SELECT,
+                  ].includes(watchFields[index]?.type) && (
+                    <div className="md:col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Options (comma-separated) *
+                      </label>
+                      <input
+                        type="text"
+                        {...register(`fields.${index}.options`)}
+                        className="input-field"
+                        placeholder="e.g., Option 1, Option 2, Option 3"
+                      />
+                      <p className="mt-1 text-sm text-gray-500">
+                        Separate options with commas
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Order Input (hidden) */}
+                  <input
+                    type="hidden"
+                    {...register(`fields.${index}.order`)}
+                    value={index}
+                  />
+                </div>
+
+                {/* Remove Button */}
+                <button
+                  type="button"
+                  onClick={() => removeField(index)}
+                  className="text-red-600 hover:text-red-800 p-2"
+                  title="Remove field"
+                >
+                  <Trash2 className="h-5 w-5" />
+                </button>
               </div>
-            )}
-          </Droppable>
-        </DragDropContext>
+
+              {/* Move up/down buttons */}
+              <div className="flex justify-between mt-4">
+                <button
+                  type="button"
+                  onClick={() => moveField(index, index - 1)}
+                  disabled={index === 0}
+                  className="flex items-center space-x-1 text-sm text-gray-600 disabled:opacity-50"
+                >
+                  <ChevronUp className="h-4 w-4" />
+                  <span>Move Up</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveField(index, index + 1)}
+                  disabled={index === fields.length - 1}
+                  className="flex items-center space-x-1 text-sm text-gray-600 disabled:opacity-50"
+                >
+                  <ChevronDown className="h-4 w-4" />
+                  <span>Move Down</span>
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
 
         <div className="mt-6 flex justify-end space-x-3">
           <button
@@ -374,7 +339,7 @@ const FieldBuilder: React.FC<FieldBuilderProps> = ({ surveyId }) => {
       <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
         <h3 className="text-sm font-medium text-blue-800 mb-2">Tips:</h3>
         <ul className="text-sm text-blue-700 space-y-1">
-          <li>• Drag and drop fields to reorder them</li>
+          <li>• Use move up/down buttons to reorder fields</li>
           <li>• Checkboxes, Radio buttons, and Select fields require options</li>
           <li>• Required fields must be filled by officers</li>
           <li>• Changes are saved when you click "Save Fields"</li>
