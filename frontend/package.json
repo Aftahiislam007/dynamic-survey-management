@@ -7,11 +7,14 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "type-check": "tsc --noEmit",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.2",
     "@tanstack/react-query": "^5.12.0",
+    "@tanstack/react-query-devtools": "^5.12.0",
     "axios": "^1.6.2",
     "date-fns": "^2.30.0",
     "lucide-react": "^0.309.0",
@@ -21,6 +24,7 @@
     "react-dropzone": "^14.2.3",
     "react-hook-form": "^7.47.0",
     "react-hot-toast": "^2.4.1",
+    "react-beautiful-dnd": "^13.1.1",
     "zod": "^3.22.4",
     "zustand": "^4.4.7"
   },
@@ -29,6 +33,7 @@
     "@types/react": "^18.2.45",
     "@types/react-dom": "^18.2.18",
     "@types/react-dropzone": "^5.1.6",
+    "@types/react-beautiful-dnd": "^13.1.6",
     "autoprefixer": "^10.4.16",
     "eslint": "^8.56.0",
     "eslint-config-next": "14.0.4",
