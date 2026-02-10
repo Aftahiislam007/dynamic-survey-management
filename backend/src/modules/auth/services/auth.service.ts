@@ -194,59 +194,156 @@ export class AuthService {
     }
   }
 
-  async registration(req: any, registerDTO: RegisterDTO) {
-    try {
-      let socialMediaLogin: boolean = false;
-      if (
-        registerDTO.authProvider === 'google' ||
-        registerDTO.authProvider === 'facebook' ||
-        registerDTO.authProvider === 'apple'
-      ) {
-        socialMediaLogin = true;
-      }
+  // async registration_old(req: any, registerDTO: RegisterDTO) {
+  //   try {
+  //     let socialMediaLogin: boolean = false;
+  //     if (
+  //       registerDTO.authProvider === 'google' ||
+  //       registerDTO.authProvider === 'facebook' ||
+  //       registerDTO.authProvider === 'apple'
+  //     ) {
+  //       socialMediaLogin = true;
+  //     }
 
-      if (
-        !socialMediaLogin &&
-        registerDTO.password !== registerDTO.confirmPassword
-      ) {
-        throw new UnauthorizedException('Password does not match!');
-      }
+  //     if (
+  //       !socialMediaLogin &&
+  //       registerDTO.password !== registerDTO.confirmPassword
+  //     ) {
+  //       throw new UnauthorizedException('Password does not match!');
+  //     }
 
-      const isUserExist = await this.userService.findOneUserByEmail(
-        registerDTO.email!,
-      );
+  //     const isUserExist = await this.userService.findOneUserByEmail(
+  //       registerDTO.email!,
+  //     );
 
-      if (!socialMediaLogin && isUserExist) {
-        throw new UnauthorizedException('User already exist!');
-      } else if (socialMediaLogin && isUserExist) {
-        return await this.socialLogin(req, registerDTO);
-      }
+  //     if (!socialMediaLogin && isUserExist) {
+  //       throw new UnauthorizedException('User already exist!');
+  //     } else if (socialMediaLogin && isUserExist) {
+  //       return await this.socialLogin(req, registerDTO);
+  //     }
 
-      const userDto = new CreateUserDto();
-      userDto.email = registerDTO.email;
-      userDto.password = registerDTO.password;
-      userDto.firstName = registerDTO.firstName;
-      userDto.lastName = registerDTO.lastName;
-      userDto.phoneNumber = registerDTO.phoneNumber;
-      userDto.authProvider = registerDTO.authProvider as any; // Cast to any if AuthProvider is an enum; adjust based on actual type
+  //     const userDto = new CreateUserDto();
+  //     userDto.email = registerDTO.email;
+  //     userDto.password = registerDTO.password;
+  //     userDto.firstName = registerDTO.firstName;
+  //     userDto.lastName = registerDTO.lastName;
+  //     userDto.phoneNumber = registerDTO.phoneNumber;
+  //     userDto.authProvider = registerDTO.authProvider as any; // Cast to any if AuthProvider is an enum; adjust based on actual type
 
-      const user = await this.userService.createAdminUser(
-        userDto,
-        socialMediaLogin,
-      );
-      if (!user) {
-        throw new InternalServerErrorException('Failed to create admin user');
-      }
-      console.log({ user });
-      return user;
-    } catch (error) {
-      console.log(error);
-      return {
-        Status: 500,
-        message: error.message,
-        error: 'Internal Server Error',
-      };
+  //     const user = await this.userService.createAdminUser(
+  //       userDto,
+  //       socialMediaLogin,
+  //     );
+  //     if (!user) {
+  //       throw new InternalServerErrorException('Failed to create admin user');
+  //     }
+  //     console.log({ user });
+  //     return user;
+  //   } catch (error) {
+  //     console.log(error);
+  //     return {
+  //       Status: 500,
+  //       message: error.message,
+  //       error: 'Internal Server Error',
+  //     };
+  //   }
+  // }
+
+  async adminRegistration(req: any, registerDTO: RegisterDTO) {
+    let socialMediaLogin: boolean = false;
+    if (
+      registerDTO.authProvider === 'google' ||
+      registerDTO.authProvider === 'facebook' ||
+      registerDTO.authProvider === 'apple'
+    ) {
+      socialMediaLogin = true;
     }
+
+    if (
+      !socialMediaLogin &&
+      registerDTO.password !== registerDTO.confirmPassword
+    ) {
+      throw new UnauthorizedException('Password does not match!');
+    }
+
+    const isUserExist = await this.userService.findOneUserByEmail(
+      registerDTO.email!,
+    );
+
+    if (isUserExist) {
+      throw new UnauthorizedException('User already exists!');
+    }
+
+    // Check if there are any super admin users in the system
+    const superAdminExists = await this.userService.checkSuperAdminExists();
+
+    let isSuperAdmin = false;
+
+    if (superAdminExists) {
+    // If super admin exists, check if the current request is authenticated
+    if (!req.user || !req.user.id) {
+      throw new UnauthorizedException(
+        'Authentication required to create admin users',
+      );
+    }
+
+    // Verify the current user is a super admin
+    if (!req.user.isSuperAdmin) {
+      throw new UnauthorizedException(
+        'Only super admin can create admin users',
+      );
+    }
+
+    // Super admin exists and authenticated user is super admin
+    // The new user will be a regular admin (not super admin)
+    isSuperAdmin = false;
+  } else {
+    // No super admin exists - this will be the first super admin
+    // But first, check if someone is trying to create another super admin when one already exists
+    // This is a double-check to prevent multiple super admins
+    
+    // Verify no one is authenticated (first admin scenario)
+    if (req.user && req.user.id) {
+      // Someone is authenticated, check if super admin already exists (double safety check)
+      const doubleCheckSuperAdmin = await this.userService.checkSuperAdminExists();
+      if (doubleCheckSuperAdmin) {
+        throw new UnauthorizedException('Super Admin already exists');
+      }
+    }
+
+    // First admin user becomes super admin automatically
+    isSuperAdmin = true;
+  }
+
+    const userDto = new CreateUserDto();
+    userDto.email = registerDTO.email;
+    userDto.password = registerDTO.password;
+    userDto.firstName = registerDTO.firstName;
+    userDto.lastName = registerDTO.lastName;
+    userDto.phoneNumber = registerDTO.phoneNumber;
+    userDto.authProvider = registerDTO.authProvider as any;
+
+    // Create admin user (isSuperAdmin determines if they're super admin or regular admin)
+    const user = await this.userService.createAdminUser(
+      userDto,
+      socialMediaLogin,
+      isSuperAdmin,
+    );
+
+    if (!user) {
+      throw new InternalServerErrorException('Failed to create admin user');
+    }
+
+    console.log({
+      createdUser: {
+        id: user.id,
+        email: user.email,
+        userType: user.userType,
+        isSuperAdmin: user.isSuperAdmin,
+      }
+    });
+
+    return user;
   }
 
   async socialLogin(req: any, registerDTO: RegisterDTO) {

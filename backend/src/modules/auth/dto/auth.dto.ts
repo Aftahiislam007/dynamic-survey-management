@@ -13,7 +13,7 @@ export class AuthDTO {
 
 export class LoginDTO {
   @ApiProperty({
-    example: 'admin@neoscoder.com',
+    example: 'admin@gmail.com',
     description: 'Email address of the user',
   })
   email?: string;

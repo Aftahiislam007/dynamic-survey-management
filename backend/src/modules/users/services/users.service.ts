@@ -8,7 +8,7 @@ import { UserTypes } from '../data/user-type.enum';
 import { Gender } from '../data/user-gender.enum';
 import { hashPassword } from 'src/utils/bcrypt';
 import { UpdateUserDto } from '../dto/update-user.dto';
-
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UsersService {
@@ -314,63 +314,98 @@ export class UsersService {
     }
   }
 
-  async createAdminUser(userDto: CreateUserDto, socialMediaLogin: boolean) {
-    // create admin user without supervisor id and role id and enroll id
-    // check if isSuperAdmin exist
-    const findSuperAdmin = await this.userRepository.findOne({
-      where: { isSuperAdmin: true },
-    });
-    if (findSuperAdmin)
-      throw new NotFoundException('Super Admin already exists');
+  // async createAdminUser_old(userDto: CreateUserDto, socialMediaLogin: boolean) {
+  //   // create admin user without supervisor id and role id and enroll id
+  //   // check if isSuperAdmin exist
+  //   const findSuperAdmin = await this.userRepository.findOne({
+  //     where: { isSuperAdmin: true },
+  //   });
+  //   if (findSuperAdmin)
+  //     throw new NotFoundException('Super Admin already exists');
 
-    try {
-      const isEmailExist = await this.userRepository.findOne({
-        where: { email: userDto.email },
-      });
-      if (isEmailExist) throw new NotFoundException('Email already exists');
+  //   try {
+  //     const isEmailExist = await this.userRepository.findOne({
+  //       where: { email: userDto.email },
+  //     });
+  //     if (isEmailExist) throw new NotFoundException('Email already exists');
 
-      const hashedPassword = await hashPassword(userDto.password!);
-      let password: string | undefined = '';
-      if (socialMediaLogin) {
-        password = undefined;
-      } else {
-        password = hashedPassword;
-      }
+  //     const hashedPassword = await hashPassword(userDto.password!);
+  //     let password: string | undefined = '';
+  //     if (socialMediaLogin) {
+  //       password = undefined;
+  //     } else {
+  //       password = hashedPassword;
+  //     }
 
-      const adminUser = await this.userRepository.save({
-        ...userDto,
-        strFullName: userDto.firstName + ' ' + userDto.lastName,
-        isSuperAdmin: true,
-        strUserType: UserTypes.SUPER_ADMIN,
-        strPassword: password,
-      });
+  //     const adminUser = await this.userRepository.save({
+  //       ...userDto,
+  //       strFullName: userDto.firstName + ' ' + userDto.lastName,
+  //       isSuperAdmin: true,
+  //       strUserType: UserTypes.SUPER_ADMIN,
+  //       strPassword: password,
+  //     });
 
-      const userPasswordSecurityManager =
-        this.userPasswordSecurityManagerRepository.create({
-          decryptedPassword: userDto.password,
-          user: adminUser,
-          userId: adminUser.id,
-          createdBy: adminUser.id,
-        });
-      await this.userPasswordSecurityManagerRepository.save(
-        userPasswordSecurityManager,
-      );
+  //     const userPasswordSecurityManager =
+  //       this.userPasswordSecurityManagerRepository.create({
+  //         decryptedPassword: userDto.password,
+  //         user: adminUser,
+  //         userId: adminUser.id,
+  //         createdBy: adminUser.id,
+  //       });
+  //     await this.userPasswordSecurityManagerRepository.save(
+  //       userPasswordSecurityManager,
+  //     );
 
-      return {
-        id: adminUser.id,
-        email: adminUser.email,
-        name: adminUser.firstName + ' ' + adminUser.lastName,
-        phoneNumber: adminUser.phoneNumber,
-        userType: adminUser.userType,
-        isSuperAdmin: adminUser.isSuperAdmin,
-        isEmailVerified: adminUser.isEmailVerified,
-        token: null,
-        createdAt: adminUser.createdAt,
-        updatedAt: adminUser.updatedAt,
-      };
-    } catch (error) {
-      return error.response;
+  //     return {
+  //       id: adminUser.id,
+  //       email: adminUser.email,
+  //       name: adminUser.firstName + ' ' + adminUser.lastName,
+  //       phoneNumber: adminUser.phoneNumber,
+  //       userType: adminUser.userType,
+  //       isSuperAdmin: adminUser.isSuperAdmin,
+  //       isEmailVerified: adminUser.isEmailVerified,
+  //       token: null,
+  //       createdAt: adminUser.createdAt,
+  //       updatedAt: adminUser.updatedAt,
+  //     };
+  //   } catch (error) {
+  //     return error.response;
+  //   }
+  // }
+
+  async createAdminUser(
+    createUserDto: CreateUserDto,
+    socialMediaLogin: boolean,
+    isSuperAdmin: boolean = false,
+  ): Promise<User> {
+    const user = new User();
+    user.email = createUserDto.email!;
+    user.firstName = createUserDto.firstName!;
+    user.lastName = createUserDto.lastName!;
+    user.phoneNumber = createUserDto.phoneNumber!;
+    user.authProvider = createUserDto.authProvider!;
+
+    // IMPORTANT: Always set userType to ADMIN for admin registration
+    user.userType = UserTypes.SUPER_ADMIN;
+
+    // Set super admin status based on parameter
+    user.isSuperAdmin = isSuperAdmin;
+
+    if (!socialMediaLogin && createUserDto.password) {
+      const hashedPassword = await bcrypt.hash(createUserDto.password, 10);
+      user.password = hashedPassword;
     }
+
+    const savedUser = await this.userRepository.save(user);
+
+    console.log('Admin user created:', {
+      id: savedUser.id,
+      email: savedUser.email,
+      userType: savedUser.userType,
+      isSuperAdmin: savedUser.isSuperAdmin,
+    });
+
+    return savedUser;
   }
 
   async updatePassword(
@@ -421,5 +456,20 @@ export class UsersService {
         `Failed to update password: ${error.message}`,
       );
     }
+  }
+
+  // Check if any super admin exists in the system
+  async checkSuperAdminExists(): Promise<boolean> {
+    const count = await this.userRepository.count({
+      where: { isSuperAdmin: true },
+    });
+    return count > 0;
+  }
+
+  // Find user by ID
+  async findOneById(id: string): Promise<User | null> {
+    return await this.userRepository.findOne({
+      where: { id: parseInt(id), isActive: true },
+    });
   }
 }

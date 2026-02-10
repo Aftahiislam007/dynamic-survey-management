@@ -29,11 +29,13 @@ import { LoginDTO, RegisterDTO, UpdatePasswordDTO } from '../dto/auth.dto';
 import { REQUEST_ERROR, SUCCESS } from 'src/shared/constants/httpCodes';
 import { notFound, requestInvalid, success } from 'src/helpers/http';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { ThrottlerGuard } from '@nestjs/throttler/dist/throttler.guard';
+import { AccessControlGuard } from 'src/common/guards/access-control.guard';
 
 @ApiTags('🌏 🔒 Auth API')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(private readonly authService: AuthService) { }
 
   @Post('login')
   @ApiOperation({
@@ -67,6 +69,8 @@ export class AuthController {
   }
 
   @Post('officer-login')
+  // @UseGuards(ThrottlerGuard, JwtAuthGuard, AccessControlGuard)
+  // @ApiBearerAuth()
   @ApiOperation({
     summary: 'Officer login',
     description: 'Authenticates Officer user and returns tokens',
@@ -97,27 +101,40 @@ export class AuthController {
   }
 
   @Post('admin-registration')
+  // @UseGuards(ThrottlerGuard, JwtAuthGuard, AccessControlGuard)
+  // @ApiBearerAuth()
   @ApiOperation({
     summary: 'Admin registration',
-    description: 'Registers a new admin user',
+    description: 'Registers a new admin user. First admin becomes super admin automatically. Subsequent admin registrations require super admin authentication.',
   })
   @ApiBody({ type: RegisterDTO })
-  @ApiResponse({ status: 200, description: 'Registration successful' })
+  @ApiResponse({ status: 200, description: 'Admin registration successful' })
   @ApiResponse({ status: 400, description: 'Bad request' })
-  async register(
+  @ApiResponse({ status: 401, description: 'Unauthorized - Only super admin can create admin users' })
+  async adminRegister(
     @Request() request: any,
     @Res() response: Response,
     @Body() registerDTO: RegisterDTO,
   ) {
     try {
-      const data: any = await this.authService.registration(
+      const data: any = await this.authService.adminRegistration(
         request,
         registerDTO,
       );
 
       return response.status(SUCCESS).json(success(data));
     } catch (error) {
-      return response.status(REQUEST_ERROR).json(requestInvalid(error));
+      // Determine the correct status code
+    const statusCode = error.status || error.statusCode || REQUEST_ERROR;
+    
+    // Create proper error response
+    const errorResponse = {
+      statusCode: statusCode,
+      message: error.message || 'An error occurred',
+      error: error.name || 'Error',
+    };
+
+    return response.status(statusCode).json(errorResponse);
     }
   }
 
